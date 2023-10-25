@@ -1,7 +1,7 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommandInput, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 const ddbDocClient = createDDbDocClient();
 
@@ -12,9 +12,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
     // console.log("Event: ", JSON.stringify(event?.queryStringParameters));
     // const parameters = event?.queryStringParameters;
     // const movieId = parameters ? parseInt(parameters.movieId) : undefined;
+    const queryParams = event.queryStringParameters;
 
     const parameters  = event?.pathParameters;
     const movieId = parameters?.movieId ? parseInt(parameters.movieId) : undefined;
+    const cast = queryParams?.cast
 
     if (!movieId) {
       return {
@@ -32,6 +34,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         Key: { movieId: movieId },
       })
     );
+
     console.log("GetCommand response: ", commandOutput);
     if (!commandOutput.Item) {
       return {
@@ -42,6 +45,39 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         body: JSON.stringify({ Message: "Invalid movie Id" }),
       };
     }
+
+    if (cast){
+     try { 
+      const command: QueryCommandInput = {
+        TableName: process.env.CAST_TABLE,
+        KeyConditionExpression: "movieId = :m",
+        ExpressionAttributeValues: {
+          ":m": movieId,
+        },
+      } 
+
+      console.log(command)
+      const output =  await ddbDocClient.send(
+         new QueryCommand(command)
+       )
+
+       console.log("QueryCommand response: ", output);
+       commandOutput.Item = {
+         ...commandOutput.Item,
+         cast: output.Items
+       }
+      } catch(error){
+        console.log("Error response: ", error);
+        return {
+          statusCode: 404,
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({error}),
+        };
+      }
+     }
+
     const body = {
       data: commandOutput.Item,
     };
